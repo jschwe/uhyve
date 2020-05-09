@@ -678,14 +678,16 @@ pub trait Vm {
 
 					let cpuid = CpuId::new();
 					let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
+						println!("Failed to detect from cpuid");
 						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
+							println!("Failed to detect from hypervisor_info");
 							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or(0)
 						})
 					});
-					debug!("detected a cpu frequency of {} Mhz", mhz);
+					println!("detected a cpu frequency of {} Mhz", mhz);
 					write_volatile(&mut (*boot_info).cpu_freq, mhz);
 					if (*boot_info).cpu_freq == 0 {
-						warn!("Unable to determine processor frequency");
+						println!("Unable to determine processor frequency");
 					}
 				}
 
@@ -716,8 +718,11 @@ fn detect_freq_from_cpuid(cpuid: &CpuId) -> std::result::Result<u32, ()> {
 }
 
 fn detect_freq_from_cpuid_hypervisor_info(cpuid: &CpuId) -> std::result::Result<u32, ()> {
+	println!("Trying to detect CPU frequency via cpuid hypervisor info");
 	let hypervisor_info = cpuid.get_hypervisor_info().ok_or(())?;
+	println!("cpuid detected hypervisor: {:?}", hypervisor_info.identify());
 	let freq = hypervisor_info.tsc_frequency().ok_or(())?;
+	println!("cpuid detected frequency of {} from hypervisor", freq);
 	let mhz: u32 = freq / 1000000u32;
 	if mhz > 0 {
 		Ok(mhz)
