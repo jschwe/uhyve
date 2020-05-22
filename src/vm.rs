@@ -14,8 +14,11 @@ use std::io::Read;
 use std::net::Ipv4Addr;
 use std::process::Command;
 use std::ptr::write_volatile;
-use std::time::SystemTime;
+use std::time::{SystemTime, Instant};
 use std::{fmt, mem, slice};
+use x86::time::rdtsc;
+use bitflags::_core::time::Duration;
+use std::thread::sleep;
 
 use consts::*;
 use debug_manager::DebugManager;
@@ -23,6 +26,7 @@ use debug_manager::DebugManager;
 pub use linux::uhyve::*;
 #[cfg(target_os = "macos")]
 pub use macos::uhyve::*;
+
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -677,16 +681,7 @@ pub trait Vm {
 					}
 
 					let cpuid = CpuId::new();
-					let mhz: u32 = detect_freq_from_cpuid(&cpuid).unwrap_or_else(|_| {
-						debug!("Failed to detect from cpuid");
-						detect_freq_from_cpuid_hypervisor_info(&cpuid).unwrap_or_else(|_| {
-							debug!("Failed to detect from hypervisor_info");
-							detect_freq_from_cpu_brand_string(&cpuid).unwrap_or_else(|_| {
-								debug!("Failed to detect from brand string");
-								get_cpu_frequency_from_os().unwrap_or(0)
-							})
-						})
-					});
+					let mhz: u32 = measure_frequency().unwrap_or(0);
 					debug!("detected a cpu frequency of {} Mhz", mhz);
 					write_volatile(&mut (*boot_info).cpu_freq, mhz);
 					if (*boot_info).cpu_freq == 0 {
@@ -758,6 +753,33 @@ fn detect_freq_from_cpu_brand_string(cpuid: &CpuId) -> std::result::Result<u32, 
 	} else {
 		Err(())
 	}
+}
+
+#[inline]
+fn get_timestamp_rdtsc() -> u64 {
+	unsafe {
+		llvm_asm!("lfence" ::: "memory" : "volatile");
+		let value = rdtsc();
+		llvm_asm!("lfence" ::: "memory" : "volatile");
+		value
+	}
+}
+
+fn measure_frequency() -> std::result::Result<u32, ()> {
+	let start_tick = get_timestamp_rdtsc();
+	let start_time = Instant::now();
+	sleep(Duration::from_millis(100));
+	let end_tick = get_timestamp_rdtsc();
+	let elapsed = start_time.elapsed();
+	if end_tick <= start_tick { return Err(());}
+	let mhz = (end_tick - start_tick) / (elapsed.as_micros() as u64);
+	if mhz > 8000 {
+		Err(())
+	}
+	else {
+		Ok(mhz as u32)
+	}
+
 }
 
 #[cfg(target_os = "linux")]

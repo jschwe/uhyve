@@ -1,3 +1,4 @@
+#![feature(llvm_asm)]
 #![allow(unused_macros)]
 
 extern crate aligned_alloc;
